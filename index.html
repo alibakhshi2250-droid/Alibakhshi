@@ -81,7 +81,16 @@
   .cust-card {
     border-radius: 12px; padding: 13px; display: flex; align-items: center; gap: 10px;
     background: rgba(237,228,211,0.04); border: 1px dashed rgba(237,228,211,0.18); transition: transform 0.2s;
+    border-right-width: 4px; border-right-style: solid;
   }
+  .cust-name.masked { opacity: 0.45; letter-spacing: 0.1em; font-style: italic; }
+  .reveal-toggle { cursor: pointer; }
+  .edit-card { flex-direction: column; align-items: stretch; gap: 8px; }
+  .edit-card input { margin-bottom: 0; }
+  .edit-actions { display: flex; gap: 8px; }
+  .edit-actions button { flex: 1; padding: 9px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+  .edit-save { background: var(--gold); color: var(--ink); }
+  .edit-cancel { background: rgba(237,228,211,0.08); color: inherit; }
   .cust-icon { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(184,134,11,0.15); font-size: 15px; }
   .cust-info { flex: 1; min-width: 0; }
   .cust-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -162,6 +171,108 @@ function formatPersianDate(isoDate) {
     return new Date(isoDate + "T00:00:00").toLocaleDateString("fa-IR", { year: "numeric", month: "long", day: "numeric" });
   } catch { return isoDate; }
 }
+
+// Deterministic color per customer name — same (normalized) name always gets the same color,
+// even if added on a different day, without needing to look anything up.
+function colorForName(name) {
+  const norm = (name || "").trim().toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < norm.length; i++) {
+    hash = (hash * 31 + norm.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `hsl(${hue}, 62%, 52%)`;
+}
+function buildListHTML(filtered) {
+  if (filtered.length === 0) {
+    return `<p class="empty-note">${state.customers.length === 0 ? "هنوز مشتری‌ای ثبت نشده — از بالا شروع کن." : "چیزی پیدا نشد."}</p>`;
+  }
+  return filtered.map(c => {
+    if (state.editingId === c.id) {
+      return `
+        <div class="cust-card edit-card" data-id="${c.id}" style="border-right-color:${colorForName(c.name)}">
+          <input type="text" class="edit-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" />
+          <input type="text" class="edit-note" value="${escapeHtml(c.note || "")}" placeholder="یادداشت" />
+          <input type="date" class="edit-date" value="${c.date || ""}" />
+          <div class="edit-actions">
+            <button class="edit-save save-edit-btn" data-id="${c.id}">💾 ذخیره</button>
+            <button class="edit-cancel cancel-edit-btn" data-id="${c.id}">لغو</button>
+          </div>
+        </div>`;
+    }
+    const revealed = state.revealedIds.has(c.id);
+    return `
+      <div class="cust-card" data-id="${c.id}" style="border-right-color:${colorForName(c.name)}">
+        <div class="cust-icon">🏷️</div>
+        <div class="cust-info">
+          <div class="cust-name-row">
+            <span class="cust-name reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}">${revealed ? escapeHtml(c.name) : "●●●●● 👁"}</span>
+            ${c.date ? `<span class="cust-date">${formatPersianDate(c.date)}</span>` : ""}
+          </div>
+          ${c.note ? `<p class="cust-note">${escapeHtml(c.note)}</p>` : ""}
+        </div>
+        <button class="code-btn copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}">📋 ${escapeHtml(c.code)}</button>
+        <button class="icon-btn edit-btn" data-id="${c.id}">✏️</button>
+        <button class="icon-btn del-btn" data-id="${c.id}">🗑️</button>
+      </div>`;
+  }).join("");
+}
+
+function getFiltered() {
+  return state.customers.filter(c => {
+    const q = (state._query || "").trim().toLowerCase();
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q.replace(/\s/g, ""));
+  });
+}
+
+function bindListEvents() {
+  document.querySelectorAll(".copy-code-btn").forEach(btn => {
+    btn.onclick = () => copyCode(btn.dataset.code, btn.dataset.id);
+  });
+  document.querySelectorAll(".del-btn").forEach(btn => {
+    btn.onclick = () => confirmDelete(btn.dataset.id);
+  });
+  document.querySelectorAll(".reveal-toggle").forEach(el => {
+    el.onclick = () => {
+      const id = el.dataset.id;
+      if (state.revealedIds.has(id)) state.revealedIds.delete(id); else state.revealedIds.add(id);
+      renderList();
+    };
+  });
+  document.querySelectorAll(".edit-btn").forEach(btn => {
+    btn.onclick = () => { state.editingId = btn.dataset.id; renderList(); };
+  });
+  document.querySelectorAll(".save-edit-btn").forEach(btn => {
+    btn.onclick = () => saveEdit(btn.dataset.id);
+  });
+  document.querySelectorAll(".cancel-edit-btn").forEach(btn => {
+    btn.onclick = () => { state.editingId = null; renderList(); };
+  });
+}
+
+function renderList() {
+  const listEl = document.getElementById("custList");
+  if (!listEl) return;
+  listEl.innerHTML = buildListHTML(getFiltered());
+  bindListEvents();
+  const countEl = document.getElementById("custCountText");
+  if (countEl) countEl.textContent = `${state.customers.length} مشتری ثبت‌شده`;
+}
+
+function saveEdit(id) {
+  const card = document.querySelector(`.cust-card[data-id="${id}"]`);
+  if (!card) return;
+  const name = card.querySelector(".edit-name").value.trim();
+  const note = card.querySelector(".edit-note").value.trim();
+  const date = card.querySelector(".edit-date").value;
+  if (!name) return;
+  state.customers = state.customers.map(c => c.id === id ? { ...c, name, note, date } : c);
+  state.editingId = null;
+  persist();
+  renderList();
+}
+
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
@@ -209,6 +320,8 @@ let state = {
   showBackup: false,
   backupCopied: false,
   quickCopied: false,
+  revealedIds: new Set(),
+  editingId: null,
 };
 
 function render() {
@@ -252,17 +365,13 @@ function render() {
   }
 
   // unlocked
-  const filtered = state.customers.filter(c => {
-    const q = (state._query || "").trim().toLowerCase();
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q.replace(/\s/g, ""));
-  });
+  const filtered = getFiltered();
 
   app.innerHTML = `
     <div class="wrap">
       <div class="header-row">
         <button class="lock-btn" id="lockBtn">🔒 قفل کردن</button>
-        <div class="title-block"><h1>دفتر رمزِ مشتریان</h1><p>${state.customers.length} مشتری ثبت‌شده</p></div>
+        <div class="title-block"><h1>دفتر رمزِ مشتریان</h1><p id="custCountText">${state.customers.length} مشتری ثبت‌شده</p></div>
       </div>
 
       <button class="backup-quick ${state.quickCopied ? "copied" : ""}" id="quickBackupBtn">
@@ -285,24 +394,7 @@ function render() {
         <input type="text" id="searchInput" placeholder="جستجو با نام یا کد رسید…" value="${escapeHtml(state._query || "")}" />
       </div>
 
-      <div class="list" id="custList">
-        ${filtered.length === 0
-          ? `<p class="empty-note">${state.customers.length === 0 ? "هنوز مشتری‌ای ثبت نشده — از بالا شروع کن." : "چیزی پیدا نشد."}</p>`
-          : filtered.map(c => `
-            <div class="cust-card" data-id="${c.id}">
-              <div class="cust-icon">🏷️</div>
-              <div class="cust-info">
-                <div class="cust-name-row">
-                  <span class="cust-name">${escapeHtml(c.name)}</span>
-                  ${c.date ? `<span class="cust-date">${formatPersianDate(c.date)}</span>` : ""}
-                </div>
-                ${c.note ? `<p class="cust-note">${escapeHtml(c.note)}</p>` : ""}
-              </div>
-              <button class="code-btn copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}">📋 ${escapeHtml(c.code)}</button>
-              <button class="icon-btn del-btn" data-id="${c.id}">🗑️</button>
-            </div>
-          `).join("")}
-      </div>
+      <div class="list" id="custList">${buildListHTML(filtered)}</div>
 
       <div class="card" style="margin-top:22px">
         <button class="btn-gold" style="background:none;color:#D9A441;font-size:12px" id="backupToggle">🛡️ پشتیبان‌گیری کامل (نمایش متن)</button>
@@ -313,7 +405,7 @@ function render() {
         </div>
       </div>
 
-      <p class="footer-note">کدها کاملاً تصادفی‌اند و ربطی به اسم مشتری ندارند. تمام داده‌ها روی همین مرورگر و رمزنگاری‌شده ذخیره می‌شوند.</p>
+      <p class="footer-note">کدها کاملاً تصادفی‌اند و ربطی به اسم مشتری ندارند. نام مشتری هم پیش‌فرض مخفی است. تمام داده‌ها روی همین مرورگر و رمزنگاری‌شده ذخیره می‌شوند.</p>
     </div>`;
 
   document.getElementById("lockBtn").onclick = lock;
@@ -325,23 +417,18 @@ function render() {
   document.getElementById("addBtn").onclick = addCustomer;
   const dateInput = document.getElementById("newDate");
   dateInput.value = state._newDate || new Date().toISOString().slice(0, 10);
-  document.getElementById("searchInput").addEventListener("input", e => { state._query = e.target.value; render(); });
-  document.querySelectorAll(".copy-code-btn").forEach(btn => {
-    btn.onclick = () => copyCode(btn.dataset.code, btn.dataset.id);
-  });
-  document.querySelectorAll(".del-btn").forEach(btn => {
-    btn.onclick = () => confirmDelete(btn.dataset.id);
-  });
+  // IMPORTANT: only update the list on each keystroke, never the whole page — otherwise the
+  // input element gets destroyed and recreated every time, which closes the mobile keyboard.
+  document.getElementById("searchInput").addEventListener("input", e => { state._query = e.target.value; renderList(); });
+  bindListEvents();
   document.getElementById("backupToggle").onclick = () => {
     state.showBackup = !state.showBackup;
     if (state.showBackup) generateBackupText();
     document.getElementById("backupPanel").classList.toggle("hidden", !state.showBackup);
   };
   document.getElementById("copyBackupBtn").onclick = copyBackupText;
-
-  // restore query/date focus after re-render
-  if (state._query) document.getElementById("searchInput").value = state._query;
 }
+
 
 // ---------- logic ----------
 async function handleSetup() {
@@ -464,8 +551,10 @@ async function addCustomer() {
   };
   state.customers = [entry, ...state.customers];
   state._newDate = dateEl.value; // keep same date for consecutive adds
+  nameEl.value = ""; noteEl.value = "";
+  document.getElementById("addBtn").disabled = true;
   persist();
-  render();
+  renderList();
 }
 
 let pendingDelete = null;
@@ -474,14 +563,11 @@ function confirmDelete(id) {
     state.customers = state.customers.filter(c => c.id !== id);
     persist();
     pendingDelete = null;
-    render();
+    renderList();
   } else {
     pendingDelete = id;
-    render();
-    setTimeout(() => {
-      const card = document.querySelector(`.cust-card[data-id="${id}"] .del-btn`);
-      if (card) card.textContent = "✅ مطمئنی؟";
-    }, 0);
+    const card = document.querySelector(`.cust-card[data-id="${id}"] .del-btn`);
+    if (card) card.textContent = "✅ مطمئنی؟";
   }
 }
 
@@ -498,6 +584,8 @@ function copyCode(code, id) {
 function lock() {
   state.key = null; state.salt = null; state.customers = [];
   state._query = "";
+  state.revealedIds = new Set();
+  state.editingId = null;
   state.phase = "unlock";
   render();
 }
