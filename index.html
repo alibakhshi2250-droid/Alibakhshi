@@ -109,12 +109,13 @@
   .search-wrap input { padding-right: 38px; margin-bottom: 0; }
   .search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-faint); display: flex; }
 
-  .list { display: flex; flex-direction: column; gap: 10px; }
+  .list { display: flex; flex-direction: column; gap: 12px; }
   .empty-note { text-align: center; font-size: 12.5px; color: var(--text-faint); padding: 44px 0; }
 
-  /* ---- ticket-stub customer card ---- */
+  /* ---- connecting-rod styled customer card: wide rounded "big end" (name) on one
+     side, narrow rounded "small end" (code) on the other, joined by a straight shaft ---- */
   .ticket {
-    display: flex; align-items: stretch; background: var(--surface); border: 1px solid var(--border);
+    display: flex; align-items: stretch; background: var(--surface); border: 2.5px solid var(--border);
     border-radius: 8px; overflow: hidden; transition: border-color 0.15s;
   }
   .ticket-main { flex: 1; min-width: 0; padding: 13px 14px; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
@@ -128,20 +129,34 @@
   .date-chip { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: var(--accent-dim); color: var(--accent-emphasis); white-space: nowrap; }
   .ticket-note { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
   .ticket-stub {
-    width: 100px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+    width: 92px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
     padding: 10px 6px; background: var(--surface-2); border-right: 1px solid var(--border);
   }
-  .ticket-code {
-    font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--text);
-    background: none; border: none; display: flex; align-items: center; gap: 5px; padding: 2px;
+  .code-ring {
+    width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: var(--surface); position: relative; flex-shrink: 0; padding: 0; border: none; cursor: pointer;
   }
-  .ticket-actions { display: flex; gap: 14px; }
+  .code-ring::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 2.5px;
+    background: conic-gradient(var(--gauge-color) 0deg 300deg, var(--border) 300deg 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  .code-ring::after {
+    content: ""; position: absolute; top: 5px; right: 22px; width: 3px; height: 3px; border-radius: 50%;
+    background: var(--gauge-color);
+  }
+  .ticket-code {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; color: var(--text);
+    background: none; border: none; padding: 0; line-height: 1.1; text-align: center; z-index: 1;
+  }
+  .ticket-actions { display: flex; gap: 12px; }
   .ticket-actions button { background: none; border: none; color: var(--text-faint); padding: 2px; display: flex; }
   .ticket-actions button:hover { color: var(--text); }
   .ticket-actions .danger:hover { color: var(--danger); }
 
   /* ---- inline edit mode ---- */
-  .edit-card { flex-direction: column; align-items: stretch; gap: 8px; padding: 14px; }
+  .edit-card { flex-direction: column; align-items: stretch; gap: 8px; padding: 14px; border-radius: 10px !important; min-height: 0 !important; }
   .edit-card input { margin-bottom: 0; }
   .edit-actions { display: flex; gap: 8px; }
   .edit-actions button { flex: 1; padding: 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
@@ -217,12 +232,12 @@ async function decryptJSON(key, payload) {
   const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, b64ToBuf(payload.data));
   return JSON.parse(dec.decode(plainBuf));
 }
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-function randomCode(len = 6) {
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O, I, 0, 1 — avoids confusion on handwritten receipts
+function randomCode(len = 4) {
   const arr = crypto.getRandomValues(new Uint8Array(len));
   let out = "";
   for (let i = 0; i < len; i++) out += CODE_ALPHABET[arr[i] % CODE_ALPHABET.length];
-  return out.slice(0, 3) + "-" + out.slice(3);
+  return out;
 }
 function formatPersianDate(isoDate) {
   if (!isoDate) return "";
@@ -260,7 +275,7 @@ function buildListHTML(filtered) {
   return filtered.map(c => {
     if (state.editingId === c.id) {
       return `
-        <div class="ticket edit-card" data-id="${c.id}" style="border-color:${hexToRgba(colorForName(c.name), 0.4)}">
+        <div class="ticket edit-card" data-id="${c.id}" style="border-color:${hexToRgba(colorForName(c.name), 0.55)}">
           <input type="text" class="edit-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" />
           <input type="text" class="edit-note" value="${escapeHtml(c.note || "")}" placeholder="یادداشت" />
           <input type="date" class="edit-date" value="${c.date || ""}" />
@@ -273,7 +288,7 @@ function buildListHTML(filtered) {
     const revealed = state.revealedIds.has(c.id);
     const accent = colorForName(c.name);
     return `
-      <div class="ticket" data-id="${c.id}" style="border-color:${hexToRgba(accent, 0.4)}">
+      <div class="ticket" data-id="${c.id}" style="border-color:${hexToRgba(accent, 0.55)}">
         <div class="ticket-main">
           <div class="name-row">
             <button class="reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}" style="${revealed ? `color:${accent}` : ""}">
@@ -283,8 +298,10 @@ function buildListHTML(filtered) {
           </div>
           ${c.note ? `<p class="ticket-note">${escapeHtml(c.note)}</p>` : ""}
         </div>
-        <div class="ticket-stub" style="border-right-color:${hexToRgba(accent, 0.45)}">
-          <button class="ticket-code copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}">${ICONS.copy} ${escapeHtml(c.code)}</button>
+        <div class="ticket-stub">
+          <button class="code-ring copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}" style="--gauge-color:${accent}">
+            <span class="ticket-code">${escapeHtml(c.code)}</span>
+          </button>
           <div class="ticket-actions">
             <button class="edit-btn" data-id="${c.id}" title="ویرایش">${ICONS.edit}</button>
             <button class="del-btn danger" data-id="${c.id}" title="حذف">${ICONS.trash}</button>
@@ -349,6 +366,38 @@ function saveEdit(id) {
   renderList();
 }
 
+const FARM_SCENE = `
+<svg viewBox="0 0 300 92" width="100%" height="auto" style="max-width:230px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg">
+  <line x1="0" y1="80" x2="300" y2="80" style="stroke:var(--border);stroke-width:1.5"/>
+  <g style="stroke:var(--border);stroke-width:1.5" stroke-linecap="round">
+    <line x1="20" y1="86" x2="35" y2="86"/>
+    <line x1="45" y1="86" x2="60" y2="86"/>
+    <line x1="70" y1="86" x2="85" y2="86"/>
+  </g>
+  <g>
+    <rect x="27" y="52" width="7" height="24" rx="2" style="fill:var(--text-faint)"/>
+    <circle cx="30" cy="35" r="15" style="fill:var(--success-dim);stroke:var(--success);stroke-width:1.5"/>
+    <circle cx="20" cy="42" r="11" style="fill:var(--success-dim);stroke:var(--success);stroke-width:1.5"/>
+    <circle cx="40" cy="42" r="11" style="fill:var(--success-dim);stroke:var(--success);stroke-width:1.5"/>
+  </g>
+  <g style="stroke:var(--text-dim);stroke-width:2" stroke-linejoin="round">
+    <line x1="248" y1="66" x2="260" y2="62"/>
+    <rect x="258" y="55" width="34" height="16" rx="3" style="fill:var(--surface-2)"/>
+  </g>
+  <circle cx="270" cy="79" r="9" style="fill:var(--surface-2);stroke:var(--text-dim);stroke-width:2"/>
+  <circle cx="270" cy="79" r="2.5" style="fill:var(--text-faint)"/>
+  <g>
+    <rect x="163" y="52" width="70" height="20" rx="4" style="fill:var(--surface);stroke:var(--text-dim);stroke-width:2"/>
+    <path d="M163 52 h27 v-24 a4 4 0 0 1 4-4 h10 v28 z" style="fill:var(--surface);stroke:var(--text-dim);stroke-width:2" stroke-linejoin="round"/>
+    <rect x="171" y="30" width="14" height="14" rx="2" style="fill:var(--accent-dim);stroke:var(--accent-emphasis);stroke-width:1.5"/>
+    <rect x="197" y="16" width="5" height="14" rx="1.5" style="fill:var(--text-dim)"/>
+  </g>
+  <circle cx="182" cy="80" r="17" style="fill:var(--surface-2);stroke:var(--text-dim);stroke-width:2.5"/>
+  <circle cx="182" cy="80" r="5" style="fill:var(--text-faint)"/>
+  <circle cx="228" cy="81" r="10" style="fill:var(--surface-2);stroke:var(--text-dim);stroke-width:2"/>
+  <circle cx="228" cy="81" r="3" style="fill:var(--text-faint)"/>
+</svg>`;
+
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
@@ -390,6 +439,7 @@ let state = {
   key: null,
   salt: null,
   customers: [],
+  usedCodes: [], // every code ever issued — kept even after a customer is deleted, so codes never repeat
   error: "",
   busy: false,
   rememberMe: false,
@@ -485,7 +535,7 @@ function render() {
         </div>
       </div>
 
-      <p class="footer-note">کدها کاملاً تصادفی‌اند و ربطی به اسم مشتری ندارند. نام مشتری هم پیش‌فرض مخفی است.<br/>تمام داده‌ها روی همین مرورگر و رمزنگاری‌شده ذخیره می‌شوند.</p>
+      <div style="margin-top:30px;opacity:0.9">${FARM_SCENE}</div>
     </div>`;
 
   document.getElementById("lockBtn").onclick = lock;
@@ -523,7 +573,7 @@ async function handleSetup() {
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
   const saltB64 = bufToB64(saltBytes.buffer);
   const key = await deriveKey(pass, saltB64);
-  const payload = await encryptJSON(key, { customers: [] });
+  const payload = await encryptJSON(key, { customers: [], usedCodes: [] });
 
   localStorage.setItem(SALT_KEY, saltB64);
   localStorage.setItem(DATA_KEY, JSON.stringify(payload));
@@ -537,7 +587,7 @@ async function handleSetup() {
     localStorage.removeItem(REMEMBER_KEY);
   }
 
-  state.key = key; state.salt = saltB64; state.customers = [];
+  state.key = key; state.salt = saltB64; state.customers = []; state.usedCodes = [];
   state.phase = "unlocked"; state.busy = false;
   render();
 }
@@ -557,6 +607,7 @@ async function unlockWithPassphrase(pass) {
     }
     state.key = key; state.salt = saltB64;
     state.customers = dataObj.customers || [];
+    state.usedCodes = dataObj.usedCodes || [];
     state.phase = "unlocked";
     return true;
   } catch (e) {
@@ -602,6 +653,7 @@ async function handleRestoreFromText() {
     const dataObj = await decryptJSON(key, { iv: backupObj.iv, data: backupObj.data });
     state.key = key; state.salt = backupObj.salt;
     state.customers = dataObj.customers || [];
+    state.usedCodes = dataObj.usedCodes || [];
     state.showRestore = false;
     state.phase = "unlocked";
     // save it into this browser's storage too, so next time it's there automatically
@@ -619,7 +671,7 @@ async function handleRestoreFromText() {
 function persist() {
   (async () => {
     if (!state.key) return;
-    const payload = await encryptJSON(state.key, { customers: state.customers });
+    const payload = await encryptJSON(state.key, { customers: state.customers, usedCodes: state.usedCodes });
     localStorage.setItem(DATA_KEY, JSON.stringify(payload));
   })();
 }
@@ -630,9 +682,10 @@ async function addCustomer() {
   const dateEl = document.getElementById("newDate");
   const name = nameEl.value.trim();
   if (!name) return;
-  const existingCodes = new Set(state.customers.map(c => c.code));
+  const usedSet = new Set(state.usedCodes);
   let code = randomCode();
-  while (existingCodes.has(code)) code = randomCode();
+  while (usedSet.has(code)) code = randomCode();
+  state.usedCodes = [...state.usedCodes, code];
   const entry = {
     id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
     name, note: noteEl.value.trim(), code, date: dateEl.value, createdAt: Date.now()
@@ -670,7 +723,7 @@ function copyCode(code, id) {
 }
 
 function lock() {
-  state.key = null; state.salt = null; state.customers = [];
+  state.key = null; state.salt = null; state.customers = []; state.usedCodes = [];
   state._query = "";
   state.revealedIds = new Set();
   state.editingId = null;
@@ -680,7 +733,7 @@ function lock() {
 
 async function quickCopyBackup() {
   if (!state.key || !state.salt) return;
-  const payload = await encryptJSON(state.key, { customers: state.customers });
+  const payload = await encryptJSON(state.key, { customers: state.customers, usedCodes: state.usedCodes });
   const backupObj = { v: 1, salt: state.salt, iv: payload.iv, data: payload.data };
   const text = JSON.stringify(backupObj);
   const ok = await copyToClipboard(text);
@@ -702,7 +755,7 @@ async function quickCopyBackup() {
 
 async function generateBackupText() {
   if (!state.key || !state.salt) return;
-  const payload = await encryptJSON(state.key, { customers: state.customers });
+  const payload = await encryptJSON(state.key, { customers: state.customers, usedCodes: state.usedCodes });
   const backupObj = { v: 1, salt: state.salt, iv: payload.iv, data: payload.data };
   document.getElementById("backupText").value = JSON.stringify(backupObj);
 }
