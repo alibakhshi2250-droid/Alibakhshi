@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<title>دفتر رمزِ مشتریان</title>
+<style>
+  :root {
+    --ink: #12213D;
+    --ink2: #0D1830;
+    --parchment: #EDE4D3;
+    --gold: #B8860B;
+    --gold-light: #D9A441;
+    --red: #E08A8A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--ink);
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(184,134,11,0.10), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(122,46,46,0.12), transparent 45%);
+    color: var(--parchment);
+    font-family: 'Vazirmatn', Tahoma, 'Segoe UI', sans-serif;
+    direction: rtl;
+  }
+  .wrap { max-width: 460px; margin: 0 auto; padding: 24px 16px 48px; }
+  .center-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: rgba(237,228,211,0.05); border: 1px solid rgba(237,228,211,0.12); border-radius: 16px; padding: 20px; }
+  .icon-badge {
+    width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 16px; background: linear-gradient(135deg, var(--gold), #8a640a);
+    box-shadow: 0 8px 24px rgba(184,134,11,0.35); font-size: 26px;
+  }
+  h1 { font-size: 20px; font-weight: 800; margin: 0 0 4px; text-align: center; }
+  .subtitle { font-size: 12px; opacity: 0.6; text-align: center; margin: 0 0 24px; }
+  input[type=text], input[type=password], input[type=date], textarea {
+    width: 100%; border-radius: 12px; padding: 12px 14px; font-size: 14px; outline: none;
+    background: var(--ink2); color: var(--parchment); border: 1px solid rgba(237,228,211,0.15);
+    font-family: inherit; margin-bottom: 10px; direction: rtl;
+  }
+  textarea.mono { font-family: monospace; font-size: 11px; }
+  button { font-family: inherit; cursor: pointer; border: none; }
+  .btn-gold {
+    width: 100%; border-radius: 12px; padding: 13px; font-size: 14px; font-weight: 700;
+    background: var(--gold); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: transform 0.1s;
+  }
+  .btn-gold:active { transform: scale(0.98); }
+  .btn-gold:disabled { opacity: 0.6; }
+  .btn-ghost {
+    width: 100%; background: none; color: inherit; opacity: 0.55; font-size: 11px; padding: 10px; text-align: center;
+  }
+  .btn-ghost:hover { opacity: 0.85; }
+  .error-text { color: var(--red); font-size: 12px; margin-bottom: 10px; }
+  .footnote { font-size: 11px; opacity: 0.4; text-align: center; margin-top: 16px; line-height: 1.7; }
+  .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .lock-btn {
+    display: flex; align-items: center; gap: 5px; font-size: 12px; padding: 8px 12px; border-radius: 10px;
+    background: rgba(237,228,211,0.06); color: inherit; opacity: 0.75;
+  }
+  .lock-btn:hover { opacity: 1; }
+  .title-block { text-align: left; }
+  .title-block h1 { text-align: right; font-size: 17px; margin: 0; }
+  .title-block p { font-size: 11px; opacity: 0.5; margin: 2px 0 0; text-align: right; }
+  .warn-banner {
+    border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; line-height: 1.6;
+    background: rgba(224,138,138,0.12); border: 1px solid rgba(224,138,138,0.3); color: var(--red);
+  }
+  .add-form { border-radius: 16px; padding: 16px; margin-bottom: 18px; background: rgba(237,228,211,0.05); border: 1px solid rgba(237,228,211,0.12); }
+  .row-flex { display: flex; gap: 8px; }
+  .row-flex input { flex: 1; }
+  .add-btn { border-radius: 12px; padding: 0 16px; display: flex; align-items: center; justify-content: center; background: var(--gold); color: var(--ink); font-size: 18px; font-weight: 800; }
+  .add-btn:disabled { opacity: 0.3; }
+  .search-wrap { position: relative; margin-bottom: 14px; }
+  .search-wrap input { padding-right: 36px; margin-bottom: 0; }
+  .search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); opacity: 0.4; font-size: 14px; }
+  .list { display: flex; flex-direction: column; gap: 9px; }
+  .empty-note { text-align: center; font-size: 12px; opacity: 0.4; padding: 40px 0; }
+  .cust-card {
+    border-radius: 12px; padding: 13px; display: flex; align-items: center; gap: 10px;
+    background: rgba(237,228,211,0.04); border: 1px dashed rgba(237,228,211,0.18); transition: transform 0.2s;
+  }
+  .cust-icon { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(184,134,11,0.15); font-size: 15px; }
+  .cust-info { flex: 1; min-width: 0; }
+  .cust-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cust-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cust-date { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(184,134,11,0.12); color: var(--gold-light); white-space: nowrap; }
+  .cust-note { font-size: 11px; opacity: 0.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 0; }
+  .code-btn {
+    display: flex; align-items: center; gap: 6px; border-radius: 8px; padding: 7px 10px; font-size: 12px;
+    font-family: monospace; font-weight: 700; letter-spacing: 0.05em;
+    background: var(--ink2); color: var(--gold-light); border: 1px solid rgba(184,134,11,0.3);
+  }
+  .icon-btn { padding: 6px; opacity: 0.3; background: none; color: inherit; font-size: 15px; }
+  .icon-btn:hover { opacity: 0.7; }
+  .confirm-wrap { display: flex; gap: 4px; }
+  .confirm-yes { padding: 6px; border-radius: 8px; background: rgba(224,138,138,0.2); color: var(--red); }
+  .confirm-no { padding: 6px; border-radius: 8px; opacity: 0.5; background: none; color: inherit; }
+  .backup-quick {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 12px;
+    padding: 10px; font-size: 12px; font-weight: 700; margin-bottom: 16px;
+    background: rgba(184,134,11,0.12); color: var(--gold-light); border: 1px solid rgba(184,134,11,0.3);
+  }
+  .backup-quick.copied { background: rgba(184,134,11,0.25); }
+  .footer-note { font-size: 11px; opacity: 0.35; text-align: center; margin-top: 24px; line-height: 1.7; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; opacity: 0.7; cursor: pointer; user-select: none; }
+  .checkbox-row input { width: auto; margin: 0; accent-color: var(--gold); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ---------- crypto helpers ----------
+function bufToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64ToBuf(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+async function deriveKey(passphrase, saltB64) {
+  const enc = new TextEncoder();
+  const salt = b64ToBuf(saltB64);
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 150000, hash: "SHA-256" },
+    keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+  );
+}
+async function encryptJSON(key, dataObj) {
+  const enc = new TextEncoder();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(JSON.stringify(dataObj)));
+  return { iv: bufToB64(iv), data: bufToB64(cipherBuf) };
+}
+async function decryptJSON(key, payload) {
+  const dec = new TextDecoder();
+  const iv = new Uint8Array(b64ToBuf(payload.iv));
+  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, b64ToBuf(payload.data));
+  return JSON.parse(dec.decode(plainBuf));
+}
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function randomCode(len = 6) {
+  const arr = crypto.getRandomValues(new Uint8Array(len));
+  let out = "";
+  for (let i = 0; i < len; i++) out += CODE_ALPHABET[arr[i] % CODE_ALPHABET.length];
+  return out.slice(0, 3) + "-" + out.slice(3);
+}
+function formatPersianDate(isoDate) {
+  if (!isoDate) return "";
+  try {
+    return new Date(isoDate + "T00:00:00").toLocaleDateString("fa-IR", { year: "numeric", month: "long", day: "numeric" });
+  } catch { return isoDate; }
+}
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
+// Robust clipboard copy: tries the modern API, falls back to the old execCommand trick,
+// and only reports success if one of them actually worked.
+async function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* fall through to legacy method */ }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.top = "-9999px";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ---------- storage (real browser localStorage — persists reliably on this device) ----------
+const SALT_KEY = "vault_salt";
+const DATA_KEY = "vault_data";
+const REMEMBER_KEY = "vault_remember";
+
+// ---------- state ----------
+let state = {
+  phase: "loading", // loading | setup | unlock | unlocked
+  key: null,
+  salt: null,
+  customers: [],
+  error: "",
+  busy: false,
+  rememberMe: false,
+  showBackup: false,
+  backupCopied: false,
+  quickCopied: false,
+};
+
+function render() {
+  const app = document.getElementById("app");
+  if (state.phase === "loading") {
+    app.innerHTML = `<div class="center-screen"><p style="opacity:.6;font-size:14px">در حال آماده‌سازی…</p></div>`;
+    return;
+  }
+  if (state.phase === "setup" || state.phase === "unlock") {
+    const isSetup = state.phase === "setup";
+    app.innerHTML = `
+      <div class="center-screen">
+        <div style="width:100%;max-width:360px">
+          <div class="icon-badge">🔑</div>
+          <h1>دفتر رمزِ مشتریان</h1>
+          <p class="subtitle">${isSetup ? "یک رمز عبور برای این دفتر بساز" : "برای بازکردن دفتر، رمز را وارد کن"}</p>
+          <div class="card">
+            <input type="password" id="passInput" placeholder="رمز عبور" autofocus />
+            ${isSetup && !state.showRestore ? `<input type="password" id="passInput2" placeholder="تکرار رمز عبور" />` : ""}
+            ${state.error ? `<p class="error-text">${escapeHtml(state.error)}</p>` : ""}
+            ${(!isSetup || state.showRestore) && state.showRestore ? `
+              <textarea class="mono" id="restoreText" rows="4" placeholder="متن پشتیبان را همین‌جا پیست کن…"></textarea>
+            ` : ""}
+            <label class="checkbox-row"><input type="checkbox" id="rememberChk" ${state.rememberMe ? "checked" : ""}/> این دستگاه رو به خاطر بسپار</label>
+            <button class="btn-gold" id="mainBtn" ${state.busy ? "disabled" : ""}>
+              ${state.busy ? "در حال بررسی…" : (state.showRestore ? "♻️ بازیابی از پشتیبان" : (isSetup ? "🛡️ ساخت دفتر" : "🔓 باز کردن"))}
+            </button>
+            <button class="btn-ghost" id="restoreToggle">${state.showRestore ? "بی‌خیال، برگرد" : "متن پشتیبان داری؟ همین‌جا بازیابی کن"}</button>
+          </div>
+          <p class="footnote">این رمز فقط پیش خودت می‌ماند و در هیچ‌جا (سروری) ذخیره نمی‌شود.<br/>اگر آن را فراموش کنی، داده‌های قبلی قابل بازیابی نیستند.</p>
+          <p class="footnote" style="opacity:.3">وضعیت به‌خاطرسپاری در این مرورگر: ${localStorage.getItem(REMEMBER_KEY) ? "فعال ✅" : "غیرفعال ❌"}</p>
+        </div>
+      </div>`;
+    document.getElementById("mainBtn").onclick = state.showRestore ? handleRestoreFromText : (isSetup ? handleSetup : handleUnlock);
+    const p2 = document.getElementById("passInput2");
+    if (p2) p2.addEventListener("keydown", e => { if (e.key === "Enter") handleSetup(); });
+    document.getElementById("passInput").addEventListener("keydown", e => { if (e.key === "Enter") (state.showRestore ? handleRestoreFromText : (isSetup ? handleSetup : handleUnlock))(); });
+    const rt = document.getElementById("restoreToggle");
+    if (rt) rt.onclick = () => { state.showRestore = !state.showRestore; state.error = ""; render(); };
+    return;
+  }
+
+  // unlocked
+  const filtered = state.customers.filter(c => {
+    const q = (state._query || "").trim().toLowerCase();
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q.replace(/\s/g, ""));
+  });
+
+  app.innerHTML = `
+    <div class="wrap">
+      <div class="header-row">
+        <button class="lock-btn" id="lockBtn">🔒 قفل کردن</button>
+        <div class="title-block"><h1>دفتر رمزِ مشتریان</h1><p>${state.customers.length} مشتری ثبت‌شده</p></div>
+      </div>
+
+      <button class="backup-quick ${state.quickCopied ? "copied" : ""}" id="quickBackupBtn">
+        ${state.quickCopied ? "✅ کپی شد" : "📋 کپی پشتیبان (یک ضربه)"}
+      </button>
+
+      <div class="add-form">
+        <div class="row-flex" style="margin-bottom:8px">
+          <input type="text" id="newName" placeholder="نام مشتری جدید…" />
+          <button class="add-btn" id="addBtn" disabled>+</button>
+        </div>
+        <div class="row-flex">
+          <input type="text" id="newNote" placeholder="یادداشت اختیاری" style="flex:1" />
+          <input type="date" id="newDate" style="width:150px" />
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="جستجو با نام یا کد رسید…" value="${escapeHtml(state._query || "")}" />
+      </div>
+
+      <div class="list" id="custList">
+        ${filtered.length === 0
+          ? `<p class="empty-note">${state.customers.length === 0 ? "هنوز مشتری‌ای ثبت نشده — از بالا شروع کن." : "چیزی پیدا نشد."}</p>`
+          : filtered.map(c => `
+            <div class="cust-card" data-id="${c.id}">
+              <div class="cust-icon">🏷️</div>
+              <div class="cust-info">
+                <div class="cust-name-row">
+                  <span class="cust-name">${escapeHtml(c.name)}</span>
+                  ${c.date ? `<span class="cust-date">${formatPersianDate(c.date)}</span>` : ""}
+                </div>
+                ${c.note ? `<p class="cust-note">${escapeHtml(c.note)}</p>` : ""}
+              </div>
+              <button class="code-btn copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}">📋 ${escapeHtml(c.code)}</button>
+              <button class="icon-btn del-btn" data-id="${c.id}">🗑️</button>
+            </div>
+          `).join("")}
+      </div>
+
+      <div class="card" style="margin-top:22px">
+        <button class="btn-gold" style="background:none;color:#D9A441;font-size:12px" id="backupToggle">🛡️ پشتیبان‌گیری کامل (نمایش متن)</button>
+        <div id="backupPanel" class="hidden" style="margin-top:10px">
+          <p style="font-size:11px;opacity:.5;margin-bottom:8px;line-height:1.6">این متن رو کپی کن و جای امنی نگه‌دار.</p>
+          <textarea class="mono" id="backupText" rows="4" readonly></textarea>
+          <button class="btn-gold" id="copyBackupBtn" style="margin-top:8px">📋 کپی متن پشتیبان</button>
+        </div>
+      </div>
+
+      <p class="footer-note">کدها کاملاً تصادفی‌اند و ربطی به اسم مشتری ندارند. تمام داده‌ها روی همین مرورگر و رمزنگاری‌شده ذخیره می‌شوند.</p>
+    </div>`;
+
+  document.getElementById("lockBtn").onclick = lock;
+  document.getElementById("quickBackupBtn").onclick = quickCopyBackup;
+  document.getElementById("newName").addEventListener("input", e => {
+    document.getElementById("addBtn").disabled = !e.target.value.trim();
+  });
+  document.getElementById("newName").addEventListener("keydown", e => { if (e.key === "Enter") addCustomer(); });
+  document.getElementById("addBtn").onclick = addCustomer;
+  const dateInput = document.getElementById("newDate");
+  dateInput.value = state._newDate || new Date().toISOString().slice(0, 10);
+  document.getElementById("searchInput").addEventListener("input", e => { state._query = e.target.value; render(); });
+  document.querySelectorAll(".copy-code-btn").forEach(btn => {
+    btn.onclick = () => copyCode(btn.dataset.code, btn.dataset.id);
+  });
+  document.querySelectorAll(".del-btn").forEach(btn => {
+    btn.onclick = () => confirmDelete(btn.dataset.id);
+  });
+  document.getElementById("backupToggle").onclick = () => {
+    state.showBackup = !state.showBackup;
+    if (state.showBackup) generateBackupText();
+    document.getElementById("backupPanel").classList.toggle("hidden", !state.showBackup);
+  };
+  document.getElementById("copyBackupBtn").onclick = copyBackupText;
+
+  // restore query/date focus after re-render
+  if (state._query) document.getElementById("searchInput").value = state._query;
+}
+
+// ---------- logic ----------
+async function handleSetup() {
+  state.error = "";
+  const pass = document.getElementById("passInput").value;
+  const pass2 = document.getElementById("passInput2").value;
+  state.rememberMe = document.getElementById("rememberChk").checked;
+  if (pass.length < 6) { state.error = "رمز باید حداقل ۶ کاراکتر باشد."; render(); return; }
+  if (pass !== pass2) { state.error = "دو رمز با هم یکسان نیستند."; render(); return; }
+  state.busy = true; render();
+
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const saltB64 = bufToB64(saltBytes.buffer);
+  const key = await deriveKey(pass, saltB64);
+  const payload = await encryptJSON(key, { customers: [] });
+
+  localStorage.setItem(SALT_KEY, saltB64);
+  localStorage.setItem(DATA_KEY, JSON.stringify(payload));
+  if (state.rememberMe) localStorage.setItem(REMEMBER_KEY, pass); else localStorage.removeItem(REMEMBER_KEY);
+
+  state.key = key; state.salt = saltB64; state.customers = [];
+  state.phase = "unlocked"; state.busy = false;
+  render();
+}
+
+async function unlockWithPassphrase(pass) {
+  try {
+    const saltB64 = localStorage.getItem(SALT_KEY);
+    if (!saltB64) throw new Error("no-salt");
+    const key = await deriveKey(pass, saltB64);
+    let dataObj = { customers: [] };
+    const raw = localStorage.getItem(DATA_KEY);
+    if (raw) {
+      try {
+        const payload = JSON.parse(raw);
+        dataObj = await decryptJSON(key, payload);
+      } catch { throw new Error("wrong-passphrase"); }
+    }
+    state.key = key; state.salt = saltB64;
+    state.customers = dataObj.customers || [];
+    state.phase = "unlocked";
+    return true;
+  } catch (e) {
+    state.error = e.message === "no-salt"
+      ? "هیچ دفتری قبلاً ساخته نشده."
+      : "رمز اشتباه است.";
+    return false;
+  }
+}
+
+async function handleUnlock() {
+  state.error = "";
+  const pass = document.getElementById("passInput").value;
+  if (!pass) { state.error = "رمز را وارد کن."; render(); return; }
+  state.rememberMe = document.getElementById("rememberChk").checked;
+  state.busy = true; render();
+  const ok = await unlockWithPassphrase(pass);
+  if (ok) {
+    if (state.rememberMe) {
+      localStorage.setItem(REMEMBER_KEY, pass);
+      const check = localStorage.getItem(REMEMBER_KEY);
+      if (check !== pass) {
+        alert("تشخیص: نوشتن روی حافظه‌ی مرورگر ناموفق بود. لطفاً این پیام رو برای من بفرست.");
+      }
+    } else {
+      localStorage.removeItem(REMEMBER_KEY);
+    }
+  }
+  state.busy = false;
+  render();
+}
+
+async function handleRestoreFromText() {
+  state.error = "";
+  const pass = document.getElementById("passInput").value;
+  const backupTextRaw = (document.getElementById("restoreText") || {}).value || "";
+  if (!pass) { state.error = "رمز را وارد کن."; render(); return; }
+  if (!backupTextRaw.trim()) { state.error = "متن پشتیبان را پیست کن."; render(); return; }
+  state.busy = true; render();
+  try {
+    const backupObj = JSON.parse(backupTextRaw.trim());
+    const key = await deriveKey(pass, backupObj.salt);
+    const dataObj = await decryptJSON(key, { iv: backupObj.iv, data: backupObj.data });
+    state.key = key; state.salt = backupObj.salt;
+    state.customers = dataObj.customers || [];
+    state.showRestore = false;
+    state.phase = "unlocked";
+    // save it into this browser's storage too, so next time it's there automatically
+    localStorage.setItem(SALT_KEY, backupObj.salt);
+    localStorage.setItem(DATA_KEY, JSON.stringify({ iv: backupObj.iv, data: backupObj.data }));
+    state.rememberMe = document.getElementById("rememberChk") ? document.getElementById("rememberChk").checked : false;
+    if (state.rememberMe) localStorage.setItem(REMEMBER_KEY, pass); else localStorage.removeItem(REMEMBER_KEY);
+  } catch (e) {
+    state.error = "متن پشتیبان یا رمز عبور درست نیست.";
+  }
+  state.busy = false;
+  render();
+}
+
+function persist() {
+  (async () => {
+    if (!state.key) return;
+    const payload = await encryptJSON(state.key, { customers: state.customers });
+    localStorage.setItem(DATA_KEY, JSON.stringify(payload));
+  })();
+}
+
+async function addCustomer() {
+  const nameEl = document.getElementById("newName");
+  const noteEl = document.getElementById("newNote");
+  const dateEl = document.getElementById("newDate");
+  const name = nameEl.value.trim();
+  if (!name) return;
+  const existingCodes = new Set(state.customers.map(c => c.code));
+  let code = randomCode();
+  while (existingCodes.has(code)) code = randomCode();
+  const entry = {
+    id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
+    name, note: noteEl.value.trim(), code, date: dateEl.value, createdAt: Date.now()
+  };
+  state.customers = [entry, ...state.customers];
+  state._newDate = dateEl.value; // keep same date for consecutive adds
+  persist();
+  render();
+}
+
+let pendingDelete = null;
+function confirmDelete(id) {
+  if (pendingDelete === id) {
+    state.customers = state.customers.filter(c => c.id !== id);
+    persist();
+    pendingDelete = null;
+    render();
+  } else {
+    pendingDelete = id;
+    render();
+    setTimeout(() => {
+      const card = document.querySelector(`.cust-card[data-id="${id}"] .del-btn`);
+      if (card) card.textContent = "✅ مطمئنی؟";
+    }, 0);
+  }
+}
+
+function copyCode(code, id) {
+  const btn = document.querySelector(`.copy-code-btn[data-id="${id}"]`);
+  copyToClipboard(code).then(ok => {
+    if (!btn) return;
+    const original = btn.innerHTML;
+    btn.innerHTML = ok ? ("✅ " + code) : "⚠️ نشد، لمس‌کن نگه‌دار";
+    setTimeout(() => { btn.innerHTML = original; }, 1500);
+  });
+}
+
+function lock() {
+  state.key = null; state.salt = null; state.customers = [];
+  state._query = "";
+  state.phase = "unlock";
+  render();
+}
+
+async function quickCopyBackup() {
+  if (!state.key || !state.salt) return;
+  const payload = await encryptJSON(state.key, { customers: state.customers });
+  const backupObj = { v: 1, salt: state.salt, iv: payload.iv, data: payload.data };
+  const text = JSON.stringify(backupObj);
+  const ok = await copyToClipboard(text);
+  if (ok) {
+    state.quickCopied = true;
+    render();
+    setTimeout(() => { state.quickCopied = false; render(); }, 1500);
+  } else {
+    // fallback: show the full backup panel with selectable text so they can copy manually
+    state.showBackup = true;
+    render();
+    const ta = document.getElementById("backupText");
+    if (ta) { ta.value = text; ta.focus(); ta.select(); }
+    document.getElementById("backupPanel").classList.remove("hidden");
+    state.error = "";
+    alert("کپی خودکار کار نکرد. متن پشتیبان پایین صفحه انتخاب شده — با انگشت لمس‌کن نگه‌دار و «Copy» رو بزن.");
+  }
+}
+
+async function generateBackupText() {
+  if (!state.key || !state.salt) return;
+  const payload = await encryptJSON(state.key, { customers: state.customers });
+  const backupObj = { v: 1, salt: state.salt, iv: payload.iv, data: payload.data };
+  document.getElementById("backupText").value = JSON.stringify(backupObj);
+}
+
+function copyBackupText() {
+  const ta = document.getElementById("backupText");
+  const text = ta.value;
+  const btn = document.getElementById("copyBackupBtn");
+  const original = btn.textContent;
+  copyToClipboard(text).then(ok => {
+    if (ok) {
+      btn.textContent = "✅ کپی شد";
+    } else {
+      ta.focus(); ta.select();
+      btn.textContent = "⚠️ لمس‌کن نگه‌دار و Copy بزن";
+    }
+    setTimeout(() => { btn.textContent = original; }, 2000);
+  });
+}
+
+// ---------- init ----------
+(async () => {
+  const saltB64 = localStorage.getItem(SALT_KEY);
+  if (!saltB64) { state.phase = "setup"; render(); return; }
+  const remembered = localStorage.getItem(REMEMBER_KEY);
+  if (remembered) {
+    const ok = await unlockWithPassphrase(remembered);
+    if (ok) { state.rememberMe = true; render(); return; }
+    else { alert("تشخیص: رمز ذخیره‌شده پیدا شد ولی باز کردن دفتر باهاش شکست خورد."); }
+  } else {
+    // Diagnostic: confirm whether the remembered key is simply absent
+    console.log("no remembered passphrase found in localStorage");
+  }
+  state.phase = "unlock";
+  render();
+})();
+</script>
+</body>
+</html>
