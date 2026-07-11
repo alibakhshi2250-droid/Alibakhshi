@@ -112,6 +112,31 @@
   .list { display: flex; flex-direction: column; gap: 12px; }
   .empty-note { text-align: center; font-size: 12.5px; color: var(--text-faint); padding: 44px 0; }
 
+  /* ---- month accordion ---- */
+  .cust-groups { display: flex; flex-direction: column; }
+  .month-group { margin-bottom: 18px; }
+  .month-group:last-child { margin-bottom: 0; }
+  .month-header {
+    width: 100%; background: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 2px 12px; margin-bottom: 14px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+  }
+  .month-header:hover .month-title { color: var(--accent-emphasis); }
+  .month-title { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; transition: color 0.15s; }
+  .month-meta { display: flex; align-items: center; gap: 9px; }
+  .month-count { font-size: 11px; color: var(--text-faint); font-weight: 500; white-space: nowrap; }
+  .month-chevron { display: flex; color: var(--text-faint); transition: transform 0.2s ease; }
+  .month-chevron.open { transform: rotate(180deg); }
+  .month-body { display: flex; flex-direction: column; }
+  .month-body.collapsed { display: none; }
+
+  /* ---- day separators inside a month: generous spacing + a fading rule so each
+     day reads as its own little section, without the heaviness of a full divider ---- */
+  .day-group { margin-top: 26px; }
+  .day-group:first-child { margin-top: 0; }
+  .day-divider { display: flex; align-items: center; gap: 10px; margin: 0 0 12px 2px; }
+  .day-divider-label { font-size: 10.5px; color: var(--text-faint); font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; }
+  .day-divider-line { flex: 1; height: 1px; background: linear-gradient(to left, var(--border), transparent 88%); }
+
   /* ---- connecting-rod styled customer card: wide rounded "big end" (name) on one
      side, narrow rounded "small end" (code) on the other, joined by a straight shaft ---- */
   .ticket {
@@ -195,6 +220,7 @@ const ICONS = {
   search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
   refresh: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`,
   save: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>`,
+  chevron: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
   alert: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.18 14.14A1.5 1.5 0 0 0 3.4 20.4h17.2a1.5 1.5 0 0 0 1.29-2.4L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
 };
 
@@ -268,47 +294,120 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// ---------- month / day grouping ----------
+function entryDate(c) {
+  return c.date ? new Date(c.date + "T00:00:00") : new Date(c.createdAt || Date.now());
+}
+function monthKey(c) {
+  const d = entryDate(c);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("fa-IR", { year: "numeric", month: "long" });
+}
+function dayKey(c) {
+  const d = entryDate(c);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function dayLabel(key) {
+  const [y, m, day] = key.split("-").map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString("fa-IR", { weekday: "long", day: "numeric", month: "long" });
+}
+// Map preserves insertion order, and filtered/state.customers is already newest-first
+// (new entries are unshifted onto the array), so groups come out newest-month-first
+// and, inside each month, newest-day-first — with no extra sorting needed.
+function groupBy(list, keyFn) {
+  const map = new Map();
+  for (const c of list) {
+    const k = keyFn(c);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(c);
+  }
+  return map;
+}
+
+function renderTicket(c) {
+  if (state.editingId === c.id) {
+    return `
+      <div class="ticket edit-card" data-id="${c.id}" style="border-color:${hexToRgba(colorForName(c.name), 0.55)}">
+        <input type="text" class="edit-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" />
+        <input type="text" class="edit-note" value="${escapeHtml(c.note || "")}" placeholder="یادداشت" />
+        <input type="date" class="edit-date" value="${c.date || ""}" />
+        <div class="edit-actions">
+          <button class="edit-save save-edit-btn" data-id="${c.id}">${ICONS.save} ذخیره</button>
+          <button class="edit-cancel cancel-edit-btn" data-id="${c.id}">لغو</button>
+        </div>
+      </div>`;
+  }
+  const revealed = state.revealedIds.has(c.id);
+  const accent = colorForName(c.name);
+  return `
+    <div class="ticket" data-id="${c.id}" style="border-color:${hexToRgba(accent, 0.55)}">
+      <div class="ticket-main">
+        <div class="name-row">
+          <button class="reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}" style="${revealed ? `color:${accent}` : ""}">
+            ${revealed ? escapeHtml(c.name) : "نام پنهان"} ${revealed ? ICONS.eye : ICONS.eyeOff}
+          </button>
+          ${c.date ? `<span class="date-chip">${formatPersianDate(c.date)}</span>` : ""}
+        </div>
+        ${c.note ? `<p class="ticket-note">${escapeHtml(c.note)}</p>` : ""}
+      </div>
+      <div class="ticket-stub">
+        <button class="code-ring copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}" style="--gauge-color:${accent}">
+          <span class="ticket-code">${escapeHtml(c.code)}</span>
+        </button>
+        <div class="ticket-actions">
+          <button class="edit-btn" data-id="${c.id}" title="ویرایش">${ICONS.edit}</button>
+          <button class="del-btn danger" data-id="${c.id}" title="حذف">${ICONS.trash}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildDayGroupsHTML(customers) {
+  const days = groupBy(customers, dayKey);
+  let html = "";
+  for (const [dk, list] of days) {
+    html += `
+      <div class="day-group">
+        <div class="day-divider">
+          <span class="day-divider-label">${dayLabel(dk)}</span>
+          <span class="day-divider-line"></span>
+        </div>
+        <div class="list">${list.map(renderTicket).join("")}</div>
+      </div>`;
+  }
+  return html;
+}
+
 function buildListHTML(filtered) {
   if (filtered.length === 0) {
     return `<p class="empty-note">${state.customers.length === 0 ? "هنوز مشتری‌ای ثبت نشده — از بالا شروع کن." : "چیزی پیدا نشد."}</p>`;
   }
-  return filtered.map(c => {
-    if (state.editingId === c.id) {
-      return `
-        <div class="ticket edit-card" data-id="${c.id}" style="border-color:${hexToRgba(colorForName(c.name), 0.55)}">
-          <input type="text" class="edit-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" />
-          <input type="text" class="edit-note" value="${escapeHtml(c.note || "")}" placeholder="یادداشت" />
-          <input type="date" class="edit-date" value="${c.date || ""}" />
-          <div class="edit-actions">
-            <button class="edit-save save-edit-btn" data-id="${c.id}">${ICONS.save} ذخیره</button>
-            <button class="edit-cancel cancel-edit-btn" data-id="${c.id}">لغو</button>
-          </div>
-        </div>`;
-    }
-    const revealed = state.revealedIds.has(c.id);
-    const accent = colorForName(c.name);
-    return `
-      <div class="ticket" data-id="${c.id}" style="border-color:${hexToRgba(accent, 0.55)}">
-        <div class="ticket-main">
-          <div class="name-row">
-            <button class="reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}" style="${revealed ? `color:${accent}` : ""}">
-              ${revealed ? escapeHtml(c.name) : "نام پنهان"} ${revealed ? ICONS.eye : ICONS.eyeOff}
-            </button>
-            ${c.date ? `<span class="date-chip">${formatPersianDate(c.date)}</span>` : ""}
-          </div>
-          ${c.note ? `<p class="ticket-note">${escapeHtml(c.note)}</p>` : ""}
-        </div>
-        <div class="ticket-stub">
-          <button class="code-ring copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}" style="--gauge-color:${accent}">
-            <span class="ticket-code">${escapeHtml(c.code)}</span>
-          </button>
-          <div class="ticket-actions">
-            <button class="edit-btn" data-id="${c.id}" title="ویرایش">${ICONS.edit}</button>
-            <button class="del-btn danger" data-id="${c.id}" title="حذف">${ICONS.trash}</button>
-          </div>
-        </div>
+  const searching = !!(state._query || "").trim();
+  if (searching) {
+    // while searching, show a flat list — grouping by month only helps when browsing, not hunting
+    return `<div class="list">${filtered.map(renderTicket).join("")}</div>`;
+  }
+  const months = groupBy(filtered, monthKey);
+  let html = `<div class="cust-groups">`;
+  for (const [mk, list] of months) {
+    const collapsed = state.collapsedMonths.has(mk);
+    html += `
+      <div class="month-group">
+        <button class="month-header" data-month="${mk}">
+          <span class="month-title">${monthLabel(mk)}</span>
+          <span class="month-meta">
+            <span class="month-count">${list.length} مورد</span>
+            <span class="month-chevron ${collapsed ? "" : "open"}">${ICONS.chevron}</span>
+          </span>
+        </button>
+        <div class="month-body ${collapsed ? "collapsed" : ""}">${buildDayGroupsHTML(list)}</div>
       </div>`;
-  }).join("");
+  }
+  html += `</div>`;
+  return html;
 }
 
 function getFiltered() {
@@ -341,6 +440,13 @@ function bindListEvents() {
   });
   document.querySelectorAll(".cancel-edit-btn").forEach(btn => {
     btn.onclick = () => { state.editingId = null; renderList(); };
+  });
+  document.querySelectorAll(".month-header").forEach(btn => {
+    btn.onclick = () => {
+      const mk = btn.dataset.month;
+      if (state.collapsedMonths.has(mk)) state.collapsedMonths.delete(mk); else state.collapsedMonths.add(mk);
+      renderList();
+    };
   });
 }
 
@@ -448,6 +554,7 @@ let state = {
   quickCopied: false,
   revealedIds: new Set(),
   editingId: null,
+  collapsedMonths: new Set(),
 };
 
 function render() {
@@ -524,7 +631,7 @@ function render() {
         <input type="text" id="searchInput" placeholder="جستجو با نام یا کد رسید…" value="${escapeHtml(state._query || "")}" />
       </div>
 
-      <div class="list" id="custList">${buildListHTML(filtered)}</div>
+      <div id="custList">${buildListHTML(filtered)}</div>
 
       <div class="backup-block">
         <button class="backup-panel-toggle" id="backupToggle">${ICONS.save} پشتیبان‌گیری کامل (نمایش متن)</button>
@@ -727,6 +834,7 @@ function lock() {
   state._query = "";
   state.revealedIds = new Set();
   state.editingId = null;
+  state.collapsedMonths = new Set();
   state.phase = "unlock";
   render();
 }
