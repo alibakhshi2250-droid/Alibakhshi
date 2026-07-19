@@ -160,6 +160,49 @@
   .add-btn:hover:not(:disabled) { background: var(--accent-emphasis); }
   .add-btn:active:not(:disabled) { transform: scale(0.94); }
   .add-btn:disabled { opacity: 0.3; }
+  .mini-btn {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim); font-size: 11.5px;
+    padding: 7px 12px; border-radius: 20px; display: flex; align-items: center; gap: 5px; font-family: inherit;
+  }
+  .mini-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .mini-btn:active { transform: scale(0.96); }
+
+  /* ---- autocomplete (customer name + item name) ---- */
+  .ac-wrap { position: relative; }
+  .ac-wrap input { margin-bottom: 0; }
+  .ac-dropdown {
+    position: absolute; top: calc(100% + 4px); right: 0; left: 0; z-index: 40; background: var(--surface-3);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm); max-height: 190px; overflow-y: auto;
+    box-shadow: var(--shadow-card);
+  }
+  .ac-item { padding: 9px 12px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ac-item:hover { background: var(--surface-2); }
+  .ac-item-count { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+
+  /* ---- purchase item rows in the add/edit form ---- */
+  .item-row { display: flex; gap: 6px; align-items: center; }
+  .item-row input { margin-bottom: 0; }
+  .item-name-wrap { flex: 2; min-width: 0; }
+  .item-qty-input { width: 52px; flex-shrink: 0; text-align: center; padding-left: 4px !important; padding-right: 4px !important; }
+  .item-desc-input { flex: 1; min-width: 0; }
+  .item-row-remove {
+    background: none; color: var(--text-faint); padding: 6px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px;
+  }
+  .item-row-remove:hover { color: var(--danger); background: var(--danger-dim); }
+
+  /* ---- expandable purchase history under a ticket ---- */
+  .purchase-history { margin-top: 8px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 12px; }
+  .purchase-entry { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px dashed var(--border); }
+  .purchase-entry:last-child { padding-bottom: 0; border-bottom: none; }
+  .item-chip { display: inline-block; background: var(--surface-3); border: 1px solid var(--border); border-radius: 20px; padding: 3px 9px; font-size: 11px; margin: 2px 4px 2px 0; color: var(--text-dim); }
+  .other-purchases-toggle {
+    background: none; border: none; color: var(--accent-emphasis); font-size: 11px; padding: 2px 0; margin-top: 2px;
+    display: flex; align-items: center; gap: 5px; font-family: inherit; cursor: pointer; align-self: flex-start;
+  }
+  .other-purchases-toggle:hover { text-decoration: underline; }
+  .del-customer-btn { cursor: pointer; }
+  .del-customer-btn:hover { text-decoration: underline; }
 
   /* ---- search ---- */
   .search-wrap { position: relative; margin-bottom: 16px; }
@@ -252,7 +295,8 @@
 
   /* ---- inline edit mode ---- */
   .edit-card { flex-direction: column; align-items: stretch; gap: 8px; padding: 14px; border-radius: var(--radius-md) !important; min-height: 0 !important; }
-  .edit-card input { margin-bottom: 0; }
+  .edit-card input, .edit-card textarea { margin-bottom: 0; }
+  .edit-p-items { display: flex; flex-direction: column; gap: 6px; }
   .edit-actions { display: flex; gap: 8px; }
   .edit-actions button { flex: 1; padding: 11px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; }
   .edit-save { background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -393,6 +437,21 @@ function hexToRgba(hex, alpha) {
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
+function genId() {
+  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
+}
+// Normalizes Persian text for matching: unifies zero-width-non-joiner/spaces and
+// the Arabic/Persian ي-ی and ك-ک variants, so "نیم فاصله" style differences don't
+// break search or duplicate-customer detection.
+function normalizeFa(s) {
+  return (s || "")
+    .replace(/\u200c/g, " ")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
 // Robust clipboard copy: modern API first, legacy execCommand fallback.
 async function copyToClipboard(text) {
@@ -430,78 +489,198 @@ function showToast(msg, type = "default", ms = 2600) {
 // =====================================================================
 // MONTH / DAY GROUPING
 // =====================================================================
-function entryDate(c) {
-  return c.date ? new Date(c.date + "T00:00:00") : new Date(c.createdAt || Date.now());
+// Migrates older vault data (single date/note per customer) into the new
+// purchases-array shape. Safe to run on already-migrated data (no-op).
+function migrateCustomers(list) {
+  const usedSet = new Set();
+  for (const c of (list || [])) {
+    if (c.code) usedSet.add(c.code);
+    for (const p of (c.purchases || [])) if (p.code) usedSet.add(p.code);
+  }
+  function freshCode() {
+    let code = randomCode();
+    while (usedSet.has(code)) code = randomCode();
+    usedSet.add(code);
+    return code;
+  }
+  return (list || []).map(c => {
+    let purchases = c.purchases;
+    if (!purchases) {
+      purchases = [];
+      if (c.date || c.note) {
+        purchases.push({ id: genId(), date: c.date || "", createdAt: c.createdAt || Date.now(), items: [], note: c.note || "", code: c.code || freshCode() });
+      }
+    } else {
+      // Older data (before per-purchase codes existed) may have purchases with no
+      // code of their own. Give the old shared code to just one of them (so a
+      // previously-issued paper receipt still matches), and a brand-new code to
+      // any others — never reuse one code across multiple purchases.
+      let legacyCodeUsed = false;
+      purchases = purchases.map(p => {
+        if (p.code) return p;
+        if (c.code && !legacyCodeUsed) { legacyCodeUsed = true; return { ...p, code: c.code }; }
+        return { ...p, code: freshCode() };
+      });
+    }
+    return { ...c, purchases };
+  });
 }
-function monthKey(c) {
-  const d = entryDate(c);
+// Recomputed on demand (not persisted separately) so edits/deletes of purchases
+// are always reflected without a separate counter to keep in sync.
+function computeProductUsage() {
+  const map = {};
+  for (const c of state.customers) {
+    for (const p of (c.purchases || [])) {
+      for (const it of (p.items || [])) {
+        const key = normalizeFa(it.name);
+        if (!key) continue;
+        if (!map[key]) map[key] = { displayName: it.name, count: 0, lastUsed: 0 };
+        map[key].count++;
+        map[key].displayName = it.name;
+        const ts = p.createdAt || 0;
+        if (ts > map[key].lastUsed) map[key].lastUsed = ts;
+      }
+    }
+  }
+  return map;
+}
+function purchaseSummary(p) {
+  if (p.items && p.items.length) {
+    return p.items.map(it => (it.qty && it.qty > 1 ? `${it.name} ×${it.qty}` : it.name)).join("، ");
+  }
+  return p.note || "";
+}
+
+// =====================================================================
+// PURCHASE ROWS — the ticket list is now built one row per *purchase event*,
+// not one row per customer. So the same customer (same name, same code)
+// can appear as several tickets over time; each new purchase — whether for a
+// brand-new customer or an existing one — becomes its own ticket at the top
+// of today's group. A customer's other purchases are tucked behind an
+// optional "N فروش دیگر" toggle on each of their tickets.
+// =====================================================================
+function purchaseRows(customers) {
+  const rows = [];
+  for (const c of customers) {
+    for (const p of (c.purchases || [])) rows.push({ c, p });
+  }
+  return rows;
+}
+function rowDate(row) {
+  const p = row.p;
+  return p.date ? new Date(p.date + "T00:00:00") : new Date(p.createdAt || row.c.createdAt || Date.now());
+}
+function compareRowsDesc(a, b) {
+  const diff = rowDate(b).getTime() - rowDate(a).getTime();
+  if (diff !== 0) return diff;
+  return (b.p.createdAt || 0) - (a.p.createdAt || 0);
+}
+function monthKeyRow(row) {
+  const d = rowDate(row);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("fa-IR", { year: "numeric", month: "long" });
 }
-function dayKey(c) {
-  const d = entryDate(c);
+function dayKeyRow(row) {
+  const d = rowDate(row);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function dayLabel(key) {
   const [y, m, day] = key.split("-").map(Number);
   return new Date(y, m - 1, day).toLocaleDateString("fa-IR", { weekday: "long", day: "numeric", month: "long" });
 }
-// Map preserves insertion order, and filtered/state.customers is already newest-first
-// (new entries are unshifted onto the array), so groups come out newest-first with no
-// extra sorting needed.
 function groupBy(list, keyFn) {
   const map = new Map();
-  for (const c of list) {
-    const k = keyFn(c);
+  for (const item of list) {
+    const k = keyFn(item);
     if (!map.has(k)) map.set(k, []);
-    map.get(k).push(c);
+    map.get(k).push(item);
   }
   return map;
 }
 
-function renderTicket(c) {
-  if (state.editingId === c.id) {
+function renderTicket(row) {
+  const c = row.c, p = row.p;
+  const rowKey = c.id + ":" + p.id;
+  const accent = colorForName(c.name);
+
+  if (state.editingPurchase && state.editingPurchase.customerId === c.id && state.editingPurchase.purchaseId === p.id) {
     return `
-      <div class="ticket edit-card" data-id="${c.id}" style="border-color:${hexToRgba(colorForName(c.name), 0.55)}">
-        <input type="text" class="edit-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" aria-label="ویرایش نام مشتری" />
-        <input type="text" class="edit-note" value="${escapeHtml(c.note || "")}" placeholder="یادداشت" aria-label="ویرایش یادداشت" />
-        <input type="date" class="edit-date" value="${c.date || ""}" aria-label="ویرایش تاریخ" />
-        <div class="edit-actions">
-          <button class="edit-save save-edit-btn" data-id="${c.id}">${ICONS.save} ذخیره</button>
-          <button class="edit-cancel cancel-edit-btn" data-id="${c.id}">لغو</button>
+      <div class="ticket-wrap" data-rowkey="${rowKey}">
+        <div class="ticket edit-card" style="border-color:${hexToRgba(accent, 0.55)}">
+          <input type="text" class="edit-p-name" value="${escapeHtml(c.name)}" placeholder="نام مشتری" aria-label="ویرایش نام مشتری" />
+          <div class="edit-p-items" id="editItems-${rowKey}"></div>
+          <button type="button" class="mini-btn edit-p-addrow" data-rowkey="${rowKey}">${ICONS.plus} ردیف کالا</button>
+          <textarea class="edit-p-note" rows="2" placeholder="توضیح کلی (اختیاری)" aria-label="توضیح کلی فروش">${escapeHtml(p.note || "")}</textarea>
+          <input type="date" class="edit-p-date" value="${p.date || ""}" aria-label="تاریخ فروش" />
+          <div class="edit-actions">
+            <button class="edit-save save-purchase-edit-btn" data-rowkey="${rowKey}">${ICONS.save} ذخیره</button>
+            <button class="edit-cancel cancel-purchase-edit-btn" data-rowkey="${rowKey}">لغو</button>
+          </div>
         </div>
       </div>`;
   }
+
   const revealed = state.revealedIds.has(c.id);
-  const accent = colorForName(c.name);
+  const otherSales = (c.purchases || []).filter(op => op.id !== p.id);
+  const expanded = state.expandedIds.has(rowKey);
+  const summary = purchaseSummary(p);
   return `
-    <div class="ticket" data-id="${c.id}" style="border-color:${hexToRgba(accent, 0.55)}">
-      <div class="ticket-main">
-        <div class="name-row">
-          <button class="reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}" aria-pressed="${revealed}" aria-label="${revealed ? "پنهان کردن نام" : "نمایش نام"}" style="${revealed ? `color:${accent}` : ""}">
-            ${revealed ? escapeHtml(c.name) : "نام پنهان"} ${revealed ? ICONS.eye : ICONS.eyeOff}
+    <div class="ticket-wrap" data-rowkey="${rowKey}">
+      <div class="ticket" style="border-color:${hexToRgba(accent, 0.55)}">
+        <div class="ticket-main">
+          <div class="name-row">
+            <button class="reveal-toggle ${revealed ? "" : "masked"}" data-id="${c.id}" aria-pressed="${revealed}" aria-label="${revealed ? "پنهان کردن نام" : "نمایش نام"}" style="${revealed ? `color:${accent}` : ""}">
+              ${revealed ? escapeHtml(c.name) : "نام پنهان"} ${revealed ? ICONS.eye : ICONS.eyeOff}
+            </button>
+            ${p.date ? `<span class="date-chip">${formatPersianDate(p.date)}</span>` : ""}
+          </div>
+          <p class="ticket-note">${escapeHtml(summary) || "بدون قلم کالا"}</p>
+          ${otherSales.length ? `
+            <button class="other-purchases-toggle" data-rowkey="${rowKey}">
+              <span class="month-chevron ${expanded ? "open" : ""}" style="display:inline-flex">${ICONS.chevron}</span>
+              ${otherSales.length} فروش دیگر به این مشتری
+            </button>` : ""}
+        </div>
+        <div class="ticket-stub">
+          <button class="code-ring copy-code-btn" data-code="${escapeHtml(p.code || "")}" data-id="${rowKey}" style="--gauge-color:${accent}" aria-label="کپی کد ${escapeHtml(p.code || "")}">
+            <span class="ticket-code">${escapeHtml(p.code || "")}</span>
           </button>
-          ${c.date ? `<span class="date-chip">${formatPersianDate(c.date)}</span>` : ""}
-        </div>
-        ${c.note ? `<p class="ticket-note">${escapeHtml(c.note)}</p>` : ""}
-      </div>
-      <div class="ticket-stub">
-        <button class="code-ring copy-code-btn" data-code="${escapeHtml(c.code)}" data-id="${c.id}" style="--gauge-color:${accent}" aria-label="کپی کد ${escapeHtml(c.code)}">
-          <span class="ticket-code">${escapeHtml(c.code)}</span>
-        </button>
-        <div class="ticket-actions">
-          <button class="edit-btn" data-id="${c.id}" title="ویرایش" aria-label="ویرایش این مشتری">${ICONS.edit}</button>
-          <button class="del-btn danger" data-id="${c.id}" title="حذف" aria-label="حذف این مشتری">${ICONS.trash}</button>
+          <div class="ticket-actions">
+            <button class="edit-purchase-btn" data-cid="${c.id}" data-pid="${p.id}" title="ویرایش این فروش" aria-label="ویرایش این فروش">${ICONS.edit}</button>
+            <button class="del-purchase-btn danger" data-key="${rowKey}" data-cid="${c.id}" data-pid="${p.id}" title="حذف این فروش" aria-label="حذف این فروش">${ICONS.trash}</button>
+          </div>
         </div>
       </div>
+      ${expanded ? buildOtherPurchasesHTML(c, otherSales) : ""}
     </div>`;
 }
 
-function buildDayGroupsHTML(customers) {
-  const days = groupBy(customers, dayKey);
+// Read-only glance at a customer's other sales — editing/deleting any of them
+// happens from that sale's own primary ticket (findable by searching the
+// customer's name, which lists all their tickets flat).
+function buildOtherPurchasesHTML(c, otherSales) {
+  const entries = otherSales.map(p => {
+    const chips = (p.items || []).map(it =>
+      `<span class="item-chip">${escapeHtml(it.name)}${it.qty && it.qty > 1 ? ` ×${it.qty}` : ""}${it.desc ? ` — ${escapeHtml(it.desc)}` : ""}</span>`
+    ).join("");
+    return `
+      <div class="purchase-entry">
+        <span class="day-divider-label" style="font-weight:600">${p.date ? formatPersianDate(p.date) : "بدون تاریخ"} <span style="font-family:'IBM Plex Mono',monospace;font-weight:500;color:var(--text-faint)">— ${escapeHtml(p.code || "")}</span></span>
+        <div>${chips || '<span class="ticket-note">بدون قلم کالا</span>'}</div>
+        ${p.note ? `<p class="ticket-note" style="white-space:normal">${escapeHtml(p.note)}</p>` : ""}
+      </div>`;
+  }).join("");
+  return `<div class="purchase-history">
+    ${entries}
+    <button class="del-customer-btn" data-id="${c.id}" style="align-self:flex-start;color:var(--danger);background:none;font-size:11px;padding:4px 0">${ICONS.trash} حذف کامل این مشتری و همه سوابقش</button>
+  </div>`;
+}
+
+function buildDayGroupsHTML(rows) {
+  const days = groupBy(rows, dayKeyRow);
   let html = "";
   for (const [dk, list] of days) {
     html += `
@@ -516,8 +695,8 @@ function buildDayGroupsHTML(customers) {
   return html;
 }
 
-function buildListHTML(filtered) {
-  if (filtered.length === 0) {
+function buildListHTML(rows) {
+  if (rows.length === 0) {
     if (state.customers.length === 0) {
       return `<div class="empty-note">
         ${ICONS.key.replace('width="22" height="22"', 'width="30" height="30"')}
@@ -527,12 +706,13 @@ function buildListHTML(filtered) {
     }
     return `<div class="empty-note"><strong>چیزی پیدا نشد</strong>با نام یا کد دیگه‌ای امتحان کن.</div>`;
   }
+  const sorted = rows.slice().sort(compareRowsDesc);
   const searching = !!(state._query || "").trim();
   if (searching) {
     // while searching, show a flat list — grouping by month only helps when browsing, not hunting
-    return `<div class="list">${filtered.map(renderTicket).join("")}</div>`;
+    return `<div class="list">${sorted.map(renderTicket).join("")}</div>`;
   }
-  const months = groupBy(filtered, monthKey);
+  const months = groupBy(sorted, monthKeyRow);
   let html = `<div class="cust-groups">`;
   for (const [mk, list] of months) {
     const collapsed = state.collapsedMonths.has(mk);
@@ -552,20 +732,17 @@ function buildListHTML(filtered) {
   return html;
 }
 
-function getFiltered() {
-  return state.customers.filter(c => {
-    const q = (state._query || "").trim().toLowerCase();
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q.replace(/\s/g, ""));
-  });
+function getFilteredRows() {
+  const rows = purchaseRows(state.customers);
+  const q = (state._query || "").trim().toLowerCase();
+  if (!q) return rows;
+  const qCode = q.replace(/\s/g, "");
+  return rows.filter(({ c, p }) => c.name.toLowerCase().includes(q) || (p.code || "").toLowerCase().includes(qCode));
 }
 
 function bindListEvents() {
   document.querySelectorAll(".copy-code-btn").forEach(btn => {
     btn.onclick = () => copyCode(btn.dataset.code, btn.dataset.id);
-  });
-  document.querySelectorAll(".del-btn").forEach(btn => {
-    btn.onclick = () => confirmDelete(btn.dataset.id);
   });
   document.querySelectorAll(".reveal-toggle").forEach(el => {
     el.onclick = () => {
@@ -574,15 +751,6 @@ function bindListEvents() {
       renderList();
     };
   });
-  document.querySelectorAll(".edit-btn").forEach(btn => {
-    btn.onclick = () => { state.editingId = btn.dataset.id; renderList(); };
-  });
-  document.querySelectorAll(".save-edit-btn").forEach(btn => {
-    btn.onclick = () => saveEdit(btn.dataset.id);
-  });
-  document.querySelectorAll(".cancel-edit-btn").forEach(btn => {
-    btn.onclick = () => { state.editingId = null; renderList(); };
-  });
   document.querySelectorAll(".month-header").forEach(btn => {
     btn.onclick = () => {
       const mk = btn.dataset.month;
@@ -590,30 +758,114 @@ function bindListEvents() {
       renderList();
     };
   });
+  document.querySelectorAll(".other-purchases-toggle").forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.rowkey;
+      if (state.expandedIds.has(key)) state.expandedIds.delete(key); else state.expandedIds.add(key);
+      renderList();
+    };
+  });
+  document.querySelectorAll(".edit-purchase-btn").forEach(btn => {
+    btn.onclick = () => { state.editingPurchase = { customerId: btn.dataset.cid, purchaseId: btn.dataset.pid }; renderList(); };
+  });
+  document.querySelectorAll(".del-purchase-btn").forEach(btn => {
+    btn.onclick = () => confirmDeletePurchase(btn.dataset.cid, btn.dataset.pid);
+  });
+  document.querySelectorAll(".del-customer-btn").forEach(btn => {
+    btn.onclick = () => confirmDelete(btn.dataset.id);
+  });
+  document.querySelectorAll(".edit-p-addrow").forEach(btn => {
+    btn.onclick = () => {
+      const container = document.getElementById(`editItems-${btn.dataset.rowkey}`);
+      if (!container) return;
+      const row = createItemRowEl(container);
+      row.querySelector(".item-name-input").focus();
+    };
+  });
+  document.querySelectorAll(".save-purchase-edit-btn").forEach(btn => {
+    btn.onclick = () => savePurchaseEditInline(btn.dataset.rowkey);
+  });
+  document.querySelectorAll(".cancel-purchase-edit-btn").forEach(btn => {
+    btn.onclick = () => { state.editingPurchase = null; renderList(); };
+  });
+  populatePurchaseEditRows();
+}
+
+// Fills the inline edit-card's item rows for whichever purchase is currently
+// being edited (if any) — called every time the list re-renders.
+function populatePurchaseEditRows() {
+  if (!state.editingPurchase) return;
+  const { customerId, purchaseId } = state.editingPurchase;
+  const rowKey = customerId + ":" + purchaseId;
+  const container = document.getElementById(`editItems-${rowKey}`);
+  if (!container || container.childElementCount) return;
+  const customer = state.customers.find(c => c.id === customerId);
+  const purchase = customer && (customer.purchases || []).find(p => p.id === purchaseId);
+  if (!purchase) return;
+  if (purchase.items && purchase.items.length) {
+    purchase.items.forEach(it => {
+      const row = createItemRowEl(container);
+      row.querySelector(".item-name-input").value = it.name;
+      row.querySelector(".item-qty-input").value = it.qty || "";
+      row.querySelector(".item-desc-input").value = it.desc || "";
+    });
+  } else {
+    createItemRowEl(container);
+  }
+}
+
+function savePurchaseEditInline(rowKey) {
+  const [customerId, purchaseId] = rowKey.split(":");
+  const customer = state.customers.find(c => c.id === customerId);
+  if (!customer) { state.editingPurchase = null; renderList(); return; }
+  const card = document.querySelector(`.ticket-wrap[data-rowkey="${rowKey}"] .edit-card`);
+  if (!card) return;
+  const newName = card.querySelector(".edit-p-name").value.trim();
+  const date = card.querySelector(".edit-p-date").value;
+  const note = card.querySelector(".edit-p-note").value.trim();
+  const container = document.getElementById(`editItems-${rowKey}`);
+  const items = [];
+  container.querySelectorAll(".item-row").forEach(row => {
+    const nm = row.querySelector(".item-name-input").value.trim();
+    if (!nm) return;
+    const qty = parseInt(row.querySelector(".item-qty-input").value, 10) || 1;
+    const desc = row.querySelector(".item-desc-input").value.trim();
+    items.push({ id: genId(), name: nm, qty, desc });
+  });
+  if (!items.length) return;
+  if (newName) customer.name = newName;
+  customer.purchases = (customer.purchases || []).map(p => p.id === purchaseId ? { ...p, date, note, items } : p);
+  state.editingPurchase = null;
+  persist();
+  renderList();
+  showToast("تغییرات ذخیره شد.");
 }
 
 function renderList() {
   const listEl = document.getElementById("custList");
   if (!listEl) return;
-  listEl.innerHTML = buildListHTML(getFiltered());
+  listEl.innerHTML = buildListHTML(getFilteredRows());
   bindListEvents();
   const countEl = document.getElementById("custCountText");
   if (countEl) countEl.textContent = `${state.customers.length} مشتری`;
   updateStatsRow();
 }
 
-function saveEdit(id) {
-  const card = document.querySelector(`.ticket[data-id="${id}"]`);
-  if (!card) return;
-  const name = card.querySelector(".edit-name").value.trim();
-  const note = card.querySelector(".edit-note").value.trim();
-  const date = card.querySelector(".edit-date").value;
-  if (!name) return;
-  state.customers = state.customers.map(c => c.id === id ? { ...c, name, note, date } : c);
-  state.editingId = null;
-  persist();
-  renderList();
-  showToast("تغییرات ذخیره شد.");
+let pendingDeletePurchase = null;
+function confirmDeletePurchase(customerId, purchaseId) {
+  const key = customerId + ":" + purchaseId;
+  if (pendingDeletePurchase === key) {
+    const customer = state.customers.find(c => c.id === customerId);
+    if (customer) customer.purchases = (customer.purchases || []).filter(p => p.id !== purchaseId);
+    pendingDeletePurchase = null;
+    persist();
+    renderList();
+    haptic(15);
+  } else {
+    pendingDeletePurchase = key;
+    const btn = document.querySelector(`.del-purchase-btn[data-key="${key}"]`);
+    if (btn) btn.innerHTML = ICONS.check;
+  }
 }
 
 const FARM_SCENE = `
@@ -667,15 +919,24 @@ let state = {
   showBackup: false,
   quickCopied: false,
   revealedIds: new Set(),
-  editingId: null,
   collapsedMonths: new Set(),
+  expandedIds: new Set(), // rowKeys ("customerId:purchaseId") whose sibling purchases are expanded
+  editingPurchase: null, // { customerId, purchaseId } while editing a past purchase
   lastBackup: null,
 };
 
 function monthCountThisMonth() {
   const now = new Date();
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return state.customers.filter(c => monthKey(c) === key).length;
+  let count = 0;
+  for (const c of state.customers) {
+    for (const p of (c.purchases || [])) {
+      const d = p.date ? new Date(p.date + "T00:00:00") : new Date(p.createdAt || 0);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (k === key) count++;
+    }
+  }
+  return count;
 }
 
 function updateStatsRow() {
@@ -740,7 +1001,7 @@ function render() {
   }
 
   // unlocked
-  const filtered = getFiltered();
+  const filtered = getFilteredRows();
 
   app.innerHTML = `
     <div class="wrap">
@@ -760,14 +1021,19 @@ function render() {
       </button>
 
       <div class="add-form">
-        <div class="row-flex" style="margin-bottom:10px">
-          <input type="text" id="newName" placeholder="نام مشتری جدید…" aria-label="نام مشتری جدید" />
-          <button class="add-btn" id="addBtn" disabled aria-label="افزودن مشتری">${ICONS.plus}</button>
+        <div class="row-flex" style="margin-bottom:8px">
+          <div class="ac-wrap" style="flex:2">
+            <input type="text" id="newName" placeholder="نام مشتری (قبلی یا جدید)" aria-label="نام مشتری" />
+          </div>
+          <input type="date" id="newDate" aria-label="تاریخ فروش" style="flex:1;min-width:0" />
         </div>
-        <div class="row-flex">
-          <input type="text" id="newNote" placeholder="یادداشت اختیاری" style="flex:1" aria-label="یادداشت اختیاری" />
-          <input type="date" id="newDate" style="width:150px" aria-label="تاریخ" />
+        <div id="itemRowsContainer" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <button type="button" class="mini-btn" id="addRowBtn">${ICONS.plus} ردیف کالا</button>
+          <button type="button" class="mini-btn" id="noteToggleBtn">${ICONS.edit} یادداشت کلی</button>
         </div>
+        <textarea id="newPurchaseNote" rows="2" placeholder="توضیح کلی این فروش (اختیاری)" aria-label="توضیح کلی فروش" class="hidden" style="margin-bottom:8px"></textarea>
+        <button class="btn-primary" id="submitPurchaseBtn" disabled>${ICONS.plus} ثبت فروش</button>
       </div>
 
       <div class="search-wrap">
@@ -792,13 +1058,8 @@ function render() {
 
   document.getElementById("lockBtn").onclick = lock;
   document.getElementById("quickBackupBtn").onclick = quickCopyBackup;
-  document.getElementById("newName").addEventListener("input", e => {
-    document.getElementById("addBtn").disabled = !e.target.value.trim();
-  });
-  document.getElementById("newName").addEventListener("keydown", e => { if (e.key === "Enter") addCustomer(); });
-  document.getElementById("addBtn").onclick = addCustomer;
-  const dateInput = document.getElementById("newDate");
-  dateInput.value = state._newDate || new Date().toISOString().slice(0, 10);
+  populateAddForm();
+  wireAddForm();
   // IMPORTANT: only update the list on each keystroke, never the whole page — otherwise the
   // input element gets destroyed and recreated every time, which closes the mobile keyboard.
   document.getElementById("searchInput").addEventListener("input", e => {
@@ -874,7 +1135,7 @@ async function unlockWithPassphrase(pass) {
       } catch { throw new Error("wrong-passphrase"); }
     }
     state.key = key; state.salt = saltB64;
-    state.customers = dataObj.customers || [];
+    state.customers = migrateCustomers(dataObj.customers || []);
     state.usedCodes = dataObj.usedCodes || [];
     state.phase = "unlocked";
     return true;
@@ -920,7 +1181,7 @@ async function handleRestoreFromText() {
     const key = await deriveKey(pass, backupObj.salt);
     const dataObj = await decryptJSON(key, { iv: backupObj.iv, data: backupObj.data });
     state.key = key; state.salt = backupObj.salt;
-    state.customers = dataObj.customers || [];
+    state.customers = migrateCustomers(dataObj.customers || []);
     state.usedCodes = dataObj.usedCodes || [];
     state.showRestore = false;
     state.phase = "unlocked";
@@ -945,28 +1206,230 @@ function persist() {
   })();
 }
 
-async function addCustomer() {
+// =====================================================================
+// PURCHASE FORM — item rows and autocomplete are managed with direct DOM
+// manipulation (not re-rendered from state) so typing in one row never
+// wipes out values in another row or drops the mobile keyboard focus.
+// =====================================================================
+function closeAllDropdowns() {
+  document.querySelectorAll(".ac-dropdown").forEach(d => d.remove());
+}
+
+function showCustomerSuggestions(inputEl) {
+  const wrap = inputEl.closest(".ac-wrap");
+  closeAllDropdowns();
+  const q = normalizeFa(inputEl.value);
+  if (!q || !wrap) return;
+  const seen = new Set();
+  const matches = [];
+  for (const c of state.customers) {
+    const norm = normalizeFa(c.name);
+    if (norm.includes(q) && !seen.has(norm)) {
+      seen.add(norm);
+      matches.push(c);
+      if (matches.length >= 6) break;
+    }
+  }
+  if (!matches.length) return;
+  const dd = document.createElement("div");
+  dd.className = "ac-dropdown";
+  dd.innerHTML = matches.map(c =>
+    `<div class="ac-item" data-name="${escapeHtml(c.name)}"><span>${escapeHtml(c.name)}</span><span class="ac-item-count">${(c.purchases || []).length} فروش قبلی</span></div>`
+  ).join("");
+  wrap.appendChild(dd);
+  dd.querySelectorAll(".ac-item").forEach(el => {
+    el.onclick = () => {
+      inputEl.value = el.dataset.name;
+      dd.remove();
+      updateSubmitState();
+      const firstItemInput = document.querySelector("#itemRowsContainer .item-name-input");
+      if (firstItemInput) firstItemInput.focus();
+    };
+  });
+}
+
+function showProductSuggestions(inputEl) {
+  const wrap = inputEl.closest(".ac-wrap");
+  closeAllDropdowns();
+  const q = normalizeFa(inputEl.value);
+  if (!q || !wrap) return;
+  const usage = computeProductUsage();
+  const matches = Object.values(usage)
+    .filter(u => normalizeFa(u.displayName).includes(q))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+  if (!matches.length) return;
+  const dd = document.createElement("div");
+  dd.className = "ac-dropdown";
+  dd.innerHTML = matches.map(m =>
+    `<div class="ac-item" data-name="${escapeHtml(m.displayName)}"><span>${escapeHtml(m.displayName)}</span><span class="ac-item-count">${m.count}×</span></div>`
+  ).join("");
+  wrap.appendChild(dd);
+  dd.querySelectorAll(".ac-item").forEach(el => {
+    el.onclick = () => {
+      inputEl.value = el.dataset.name;
+      dd.remove();
+      updateSubmitState();
+      const row = inputEl.closest(".item-row");
+      if (row) row.querySelector(".item-qty-input").select();
+    };
+  });
+}
+
+function handleRowKeydown(e, containerEl, rowEl, field) {
+  if (e.key !== "Enter") return;
+  // if a suggestion dropdown is open for this field, let its own click handle selection
+  if (rowEl.querySelector(".ac-dropdown")) return;
+  e.preventDefault();
+  if (field === "name") {
+    rowEl.querySelector(".item-qty-input").select();
+  } else if (field === "qty") {
+    rowEl.querySelector(".item-desc-input").focus();
+  } else if (field === "desc") {
+    const rows = Array.from(containerEl.querySelectorAll(".item-row"));
+    const idx = rows.indexOf(rowEl);
+    if (idx === rows.length - 1) {
+      const newRow = createItemRowEl(containerEl);
+      newRow.querySelector(".item-name-input").focus();
+    } else {
+      rows[idx + 1].querySelector(".item-name-input").focus();
+    }
+  }
+}
+
+function createItemRowEl(containerEl) {
+  const wrap = document.createElement("div");
+  wrap.className = "item-row";
+  wrap.innerHTML = `
+    <div class="ac-wrap item-name-wrap">
+      <input type="text" class="item-name-input" placeholder="نام کالا" aria-label="نام کالا" />
+    </div>
+    <input type="number" class="item-qty-input" min="1" placeholder="تعداد (پیش‌فرض ۱)" aria-label="تعداد" />
+    <input type="text" class="item-desc-input" placeholder="توضیح (اختیاری)" aria-label="توضیح کالا" />
+    <button type="button" class="item-row-remove" aria-label="حذف ردیف">${ICONS.close}</button>
+  `;
+  containerEl.appendChild(wrap);
+  const nameInput = wrap.querySelector(".item-name-input");
+  const qtyInput = wrap.querySelector(".item-qty-input");
+  const descInput = wrap.querySelector(".item-desc-input");
+  const removeBtn = wrap.querySelector(".item-row-remove");
+
+  nameInput.addEventListener("input", () => { showProductSuggestions(nameInput); updateSubmitState(); });
+  nameInput.addEventListener("keydown", e => handleRowKeydown(e, containerEl, wrap, "name"));
+  qtyInput.addEventListener("keydown", e => handleRowKeydown(e, containerEl, wrap, "qty"));
+  descInput.addEventListener("keydown", e => handleRowKeydown(e, containerEl, wrap, "desc"));
+  removeBtn.onclick = () => {
+    const rows = containerEl.querySelectorAll(".item-row");
+    if (rows.length <= 1) {
+      nameInput.value = ""; qtyInput.value = ""; descInput.value = "";
+      nameInput.focus();
+      updateSubmitState();
+    } else {
+      wrap.remove();
+      updateSubmitState();
+    }
+  };
+  return wrap;
+}
+
+function updateSubmitState() {
+  const btn = document.getElementById("submitPurchaseBtn");
   const nameEl = document.getElementById("newName");
-  const noteEl = document.getElementById("newNote");
-  const dateEl = document.getElementById("newDate");
+  if (!btn || !nameEl) return;
   const name = nameEl.value.trim();
+  const anyItem = Array.from(document.querySelectorAll("#itemRowsContainer .item-name-input")).some(i => i.value.trim());
+  btn.disabled = !(name && anyItem);
+}
+
+// Rebuilds the item rows and pre-fills the form — either empty (add mode) or
+// populated from an existing purchase (edit mode). Only touches the form's own
+// elements, so it's safe to call after an add/save without disturbing the list.
+function populateAddForm() {
+  const container = document.getElementById("itemRowsContainer");
+  const nameInput = document.getElementById("newName");
+  const dateInput = document.getElementById("newDate");
+  const noteInput = document.getElementById("newPurchaseNote");
+  if (!container || !nameInput || !dateInput || !noteInput) return;
+  container.innerHTML = "";
+  nameInput.value = "";
+  dateInput.value = state._newDate || new Date().toISOString().slice(0, 10);
+  noteInput.value = "";
+  createItemRowEl(container);
+  updateSubmitState();
+}
+
+function wireAddForm() {
+  const nameInput = document.getElementById("newName");
+  nameInput.addEventListener("input", () => { showCustomerSuggestions(nameInput); updateSubmitState(); });
+  nameInput.addEventListener("keydown", e => {
+    if (e.key !== "Enter" || nameInput.closest(".ac-wrap").querySelector(".ac-dropdown")) return;
+    e.preventDefault();
+    const firstItemInput = document.querySelector("#itemRowsContainer .item-name-input");
+    if (firstItemInput) firstItemInput.focus();
+  });
+  document.getElementById("addRowBtn").onclick = () => {
+    const container = document.getElementById("itemRowsContainer");
+    const row = createItemRowEl(container);
+    row.querySelector(".item-name-input").focus();
+  };
+  const noteToggleBtn = document.getElementById("noteToggleBtn");
+  if (noteToggleBtn) {
+    noteToggleBtn.onclick = () => {
+      const ta = document.getElementById("newPurchaseNote");
+      ta.classList.toggle("hidden");
+      if (!ta.classList.contains("hidden")) ta.focus();
+    };
+  }
+  document.getElementById("submitPurchaseBtn").onclick = addPurchase;
+}
+
+function readItemRows() {
+  const rows = document.querySelectorAll("#itemRowsContainer .item-row");
+  const items = [];
+  rows.forEach(row => {
+    const name = row.querySelector(".item-name-input").value.trim();
+    if (!name) return;
+    const qty = parseInt(row.querySelector(".item-qty-input").value, 10) || 1;
+    const desc = row.querySelector(".item-desc-input").value.trim();
+    items.push({ id: genId(), name, qty, desc });
+  });
+  return items;
+}
+
+async function addPurchase() {
+  const nameInput = document.getElementById("newName");
+  const dateInput = document.getElementById("newDate");
+  const noteInput = document.getElementById("newPurchaseNote");
+  const name = nameInput.value.trim();
   if (!name) return;
+  const items = readItemRows();
+  if (!items.length) return;
+
+  const normName = normalizeFa(name);
+  let customer = state.customers.find(c => normalizeFa(c.name) === normName);
+  let isNew = false;
+  if (!customer) {
+    isNew = true;
+    customer = { id: genId(), name, createdAt: Date.now(), purchases: [] };
+    state.customers = [customer, ...state.customers];
+  }
+
+  // Every sale gets its own fresh code — even for a repeat customer —
+  // like a new claim-ticket number for each drop-off.
   const usedSet = new Set(state.usedCodes);
   let code = randomCode();
   while (usedSet.has(code)) code = randomCode();
   state.usedCodes = [...state.usedCodes, code];
-  const entry = {
-    id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
-    name, note: noteEl.value.trim(), code, date: dateEl.value, createdAt: Date.now()
-  };
-  state.customers = [entry, ...state.customers];
-  state._newDate = dateEl.value; // keep same date for consecutive adds
-  nameEl.value = ""; noteEl.value = "";
-  document.getElementById("addBtn").disabled = true;
+
+  const purchase = { id: genId(), date: dateInput.value, createdAt: Date.now(), items, note: noteInput.value.trim(), code };
+  customer.purchases = [purchase, ...(customer.purchases || [])];
+
+  state._newDate = dateInput.value; // keep same date for consecutive adds
   persist();
   renderList();
+  populateAddForm();
   haptic(12);
-  showToast(`«${name}» اضافه شد — کد: ${code}`);
+  showToast(isNew ? `«${name}» به‌عنوان مشتری جدید ثبت شد — کد: ${code}` : `فروش جدید برای «${name}» ثبت شد — کد: ${code}`);
 }
 
 let pendingDelete = null;
@@ -979,8 +1442,8 @@ function confirmDelete(id) {
     haptic(15);
   } else {
     pendingDelete = id;
-    const btn = document.querySelector(`.del-btn[data-id="${id}"]`);
-    if (btn) btn.innerHTML = ICONS.check;
+    const btn = document.querySelector(`.del-customer-btn[data-id="${id}"]`);
+    if (btn) btn.innerHTML = ICONS.check + " مطمئنی؟ دوباره بزن";
   }
 }
 
@@ -999,8 +1462,9 @@ function lock() {
   state.key = null; state.salt = null; state.customers = []; state.usedCodes = [];
   state._query = "";
   state.revealedIds = new Set();
-  state.editingId = null;
   state.collapsedMonths = new Set();
+  state.expandedIds = new Set();
+  state.editingPurchase = null;
   state.phase = "unlock";
   render();
 }
@@ -1051,6 +1515,10 @@ function copyBackupText() {
     setTimeout(() => { btn.innerHTML = original; }, 2000);
   });
 }
+
+document.addEventListener("click", e => {
+  if (!e.target.closest(".ac-wrap")) closeAllDropdowns();
+});
 
 // ---------- init ----------
 (async () => {
